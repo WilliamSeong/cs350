@@ -6,14 +6,15 @@ import (
 )
 
 func hello() {
-	fmt.Println("Hello world")
+	fmt.Println("Hello world", time.Now())
 }
 
 func goodbye() {
-	fmt.Println("Goodbye world")
+	fmt.Println("Goodbye world", time.Now())
 }
 
 func main() {
+	fmt.Println(time.Now())
 	go hello()
 	go goodbye()
 	time.Sleep(1 * time.Second)
