@@ -1,0 +1,302 @@
+CS 350
+1/30/24 - Lecture 3
+
+Review
+RPC: Remote procedure Call
+	Core building block of all distributed systems
+	General concept, not specific to Go.
+	Provides the abstraction of calling a remote function.
+		Serializes the data before sending to a remote process (Data marshaling)
+			Would still need serializing even if the process was on the same machine
+				Because they have different locations in memory, so data marshaling is still required
+			If threads belong to the same process, you can just pass the pointer, so no need for data marshaling
+
+Go Routine: 
+	Lightweight thread managed by Go runtime
+
+Go Channel:
+	It’s a go feature that allows Go routines to communicate
+
+Go Mutex:
+	Mutual Exclusion
+	It’s a lock, not specific to Go, general concept
+	A way to synchronize threads (Go Routines)
+	When you have threads that need to access the same data at the same time, you should protect your data with mutex (for writing)
+		Not needed for reading data, that will degrade performance
+
+Deadlock: 
+	Two or more threads wait for each other to release a lock
+	Indication of deadlock: Program is stalling and there is no cpu utilization, kill program or it will stay like that forever
+
+Time
+Why is time useful?
+	Can help us track the order of evens in parallel or distributed execution.
+		For debugging, troubleshooting, optimizing. Helps reason causality of events, how events interact with each other
+
+How to track time?
+	Call time package
+
+Package main
+
+Import (“time” 
+		“fmt”)
+
+func main() {
+	localTime = time.Now()
+
+	fmt.Printf(“%s\n”, localTime)
+}
+
+Possible template:
+
+func main() {
+	print_time(1)
+	print_time(2)
+}
+
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Timestamp %d: %s\n”, id, localTime)
+}
+
+What about concurrent programs?
+func main() {
+	go print_time(1)
+	go print_time(2)
+}
+
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Timestamp %d: %s\n”, id, localTime)
+}
+These are go routines, Whenever you execute concurrent go routines, there’s no guarantee of the order of execution. So time 1 and time 2 could happened in different orders every time.
+
+What about distributed programs?
+
+Machine A:
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Go routine %d: %s\n”, id, localTime)
+}
+Output: 2023-01-29 15:40:59.08
+
+Machine B:
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Go routine %d: %s\n”, id, localTime)
+}
+Output: 2023-01-29 15:40:59.09
+
+Can we figure out the order of these machines using these functions? Which function executed first in real time? Who accessed the clock first?
+
+We can’t say anything about the order because machines have different clocks, and we can’t sync those clocks ever. There is no centralized clock. No global time every process can agree on.
+
+The Clock
+Each process pi has an associated clock Ci.
+Ci is modele as a function from real times to clock times
+Real time is defined by some time standard, such as UTC
+The unit of time in UTC is the SI second
+
+Clocks Ci and Cj are delta-synchronized if the difference between the clocks is less or equal to delta.
+So a perfect clock system would be 0-synchronized (Impossible)
+We can only have loosely synchronized clocks: as closely synchronized as possible (no guarantee)
+Clock counters in machines can be arbitrarily out of sync
+
+Why is syncing impossible?
+	Temperature variation
+	Hardware imperfection
+	Network delays
+	etc.
+
+Clock Skew
+	Difference between two clocks
+	Ideally Ci - Cj = 0
+
+Clock drift
+	Drift is the accumulated effect of a clock rate that deviated from real time
+	Clocks tick at different rates
+
+There is no notion of distributed time in a distributed environment.
+
+How to achieve loosely synchronized clocks?
+
+Network Time Protocol (NTP)
+	NTP uses atomic clock as reference to allow machines in. A network synchronize their clocks
+	Uses GPS antenna to connect to atomic clock
+
+	NTP achieves an accuracy in the range of 10 microseconds - 10 milliseconds depending on the network
+
+	Some other clocks synchonization protocols can achieve better accuracies but require special HW
+	New research to bring the delta down to 10 - 100 nanoseconds without relying on hardware.
+
+Logical Clocks
+	If a occurs before b on the same thread/process then a ->r b
+	If a is a send(m) and b the receive(m), where m is a message then a ->r b
+	a ->r b is transitive, ie, if a ->r b and b ->r c then a ->r c.
+	Two events a and b are concurrent (a || b) if not a ->r b and not b ->r a
+	Do exercises on slides, remember if both relations can be ruled as no
+
+Casual order, happened-before
+How to locally tell if two events are causally related?
+
+Causally is all that matters!
+
+
+
+1/31/24 - Lab 2
+
+Parallelism vs Concurrent
+	Concurrency is the illusion of concurrency via interleaving, single core
+	Parallelism is when they actually run at the same time, multi core
+
+Parallelism uses Machines or cores
+And concurrency uses threads and goroutines
+
+main() {
+	go hello()
+	hello()
+}
+
+This will only print hello once since the process ends when the goroutine finishes and the goroutine can finish so quickly so that the normal function call doesn’t get to complete.
+
+main() { 	go hello()
+	hello()
+	time.Sleep(1 * time.Second)
+}
+
+This will print two hellos as it will make sure to keep the process up for enough time for the hello function to complete
+
+Channel
+	Channels are typed conduit
+	Allows for synchronization as it allows goroutines to communicate with each other
+	Unbuffered channels: goroutine A will go to the channel to send data, but goroutine B isn’t at the channel yet, so goroutine A will wait.
+	Buffered channels: goroutine A will go to the channel and drop the data in the channel even if goroutine B isn’t there. The buffer can hold some number of datum so if the buffer is full, then goroutine A has to wait, similarly to an unbuffered channel, until goroutine B empties the buffer.
+
+	Channels are instantiated using Make().
+		ch := make(chan int) default unbuffered channel
+		ch := make(chan int, 10) buffered channel with a capacity of 10
+
+
+	time.Ticker is a way to synchronize using channels
+	func heartbeatTicker(d time.Duration) chan struct{} {
+		ch := make(chan struct{})
+		go func() {
+			for {
+				time.Sleep(d)
+				ch <- struc{}{}
+			}
+		}()
+		return ch
+	}
+		
+
+	A sender can close a channel to signal that there will be no more data sent through the channel
+		func doStuff(ch chan int) {
+			close(ch)
+		}
+
+	Receivers can test if the channel is closed
+		value, ok := <- ch
+	func main() { 		ch := make(chan int, 10)
+		go doStuff(ch)
+		for I := range ch {
+			fmt.Println(i)
+		}
+	}
+	i will receive values from the channel repeatedly until the channel is closed.
+
+	Select
+		select allows goroutines to wait on multiple communication operations
+		select blocks until on of the cases can run, then it executes that case. If there are multiple cases that are ready to that it will choose on at random
+
+		func process(data chan [] byte, command chan int) {
+			for {
+				select {	
+				case d := <- data: // If whatever is in channel data is equal to d, then print the following 
+						fmt.Println(“Received data:”, d)
+				case cmd := <- command: // If whatever is in channel command is equal to cmd, then print the following
+						fmt.Println(“Received command:”, cmd)
+						return
+				}
+			}
+		}
+		
+		in this case the fmt.Println() goroutine is waiting on the results of multiple channels, meaning that it can communicate with the many goroutines that are utilizing those channels.
+
+	Default select case
+		Much like a switch statement, the default select case comes when no other case is ready
+		
+		func latestTimeTicker(d time.Duration) chan time.Time {
+			ch := make(chan time.Time, 1) // 1-element time buffer
+			go func() { 				for {
+					time.Sleep(d)
+					select {
+					case ch <- time.Now():
+					default: // Drop ticks if the reader falls behind
+					}
+				}
+			}()
+			return ch
+		}
+
+Mutexes
+	Goroutines communicate with each other by sending things through channels
+	There are other ways to communicate of course.
+
+	What if two goroutines have access to the same data, and they try to access that data at the same time?
+
+	A race condition is when two or more goroutines can access shared data and try to write it at the same time. You don’t know which goroutine will execute first, and so which one will write first
+		Both racing to change/access the data
+
+		x := 10
+		y := x
+		y = y + 1
+		x = y
+
+	x := 10
+	for i := 0; i < 10,000; i++ {
+		go func() {
+			y := x
+			y = y + 1
+			x = y
+		}
+	}
+	If a bunch of these are happening at the same time, it’s possible that you could miss out on some +1s.
+	
+		x := 10
+
+		mutex.Lock()
+		
+		y := x
+		y = y + 1
+		x = y
+
+		mutex.Lock()
+
+
+		x := 10
+		lock := sync.Mutex{}
+		for i := 0; i < 10,000; i++ {
+			go func() {
+				lock.Lock()
+				y := x
+				y = y + 1
+				x = y
+				lock.Unlock()
+			}
+		}
+
+When you have a goroutine in a for loop, ever single call in the for loop will call at the same time*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
