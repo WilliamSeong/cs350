@@ -1,5 +1,5 @@
 CS 350
-1/30/24 - Lecture 3
+1/30/24 - Lecture 3 pt 1
 
 Review
 RPC: Remote procedure Call
@@ -283,6 +283,170 @@ Mutexes
 		}
 
 When you have a goroutine in a for loop, ever single call in the for loop will call at the same time*
+
+
+
+2/1/24 - Lecture 3 pt 2
+
+Assignment 1:
+	20 lines of code
+	Building block #1: How to create a channel
+		Need a tunnel to put the incoming request
+	Building block #2: How to spawn k concurrent Go Routines
+		For loop, contact k weather stations
+	Building block #k: How to allow Go routines to push to the channel
+		k go routines that are pushing to the channel
+	Building block #k+1: How to pull from the channel every Average Period seconds
+		Someone needs to pull from the channel
+		1 go routine that is pulling from the channel, to unblock it
+
+Debugging tips: 	Code sometimes returns a wrong average temperature
+		Approach:
+			Instrument your code so that it prints what each Go routine returns for each batch
+				Find a batch where the problem occurs and think why some temperature values are missing
+				Make sure you spawn the necessary Go routines
+				Make sure each Go routine pushes to the channel
+				Make sure you read all values returned
+	Go complains that I pass and invalid value to the tick function
+		Approach:
+			Print the value you pass to the tick function to see what it looks like
+				Review the tick function documentation to see what are the expected arguments and their types
+				Search for examples online
+				Try out some simple examples yourself to make sure you understand how tick works
+				Don’t use tick function unless you know how it works
+
+	Program gets stuck
+		Approach: Instrument the code to see where exactly it gets stuck
+			Think about why the main Go routine may get stuck — what is it waiting for? Has it entered an eternal loop? Is there a deadlock?
+	
+	If you don’t know how to push and pull into the channel, make another file and create a channel and spawn a goroutine to push into the channel and another to pull from the channel, and play around with it.
+
+Review
+Why is time useful?
+	Help keep track of the order of events in parallel or distributed execution
+	Tracking event order helps us reason about potential causality between events
+	Causality of events Is useful in understanding system behavior, debugging, troubleshooting, optimizing, etc.
+
+func main() {
+	go print_time(1)
+	go print_time(2)
+}
+
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Timestamp %d: %s\n”, id, localTime)
+}
+
+There is no guarantee of the order these goroutines will be executed by the go runtime, unless you explicitly have some synchonization in your program.
+
+Machine A:
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Go routine %d: %s\n”, id, localTime)
+}
+Output: 2023-01-29 15:40:59.08
+
+Machine B:
+func print_time(id int) { 	localTime = time.Now()
+	fmt.Printf(“Go routine %d: %s\n”, id, localTime)
+}
+Output: 2023-01-29 15:40:59.09
+
+Local clocks are never synchronized, there may be skew
+
+THERE IS NO GLOBAL TIME
+
+Logical TimeU
+Let t be a function from events to a totally ordered set such that for events a, b: If a b then t(a) < t(b)
+
+If you can’t determine if one happened before the order, then you can say that they are concurrent, even if they aren’t
+
+Causal Order
+How to locally tell if two events are causally related?
+	What information do we need to maintain for each event?
+		Store some metadata.
+			What does this meta data look like, and how is it created and stored in a distributed system?
+
+Lamport Clocks
+	Each process has a logical clock, kept in variable tp (initially tp = 0)
+	Process p piggybacks (tp,p) on every message sent
+
+	On internal event a: tp := tp + 1
+	On event “send m”: tp := tp + 1 and send(m, (tp, p))
+	On even “receive	m” with timestamp (tq, q) from process q: tp := max(tp, tq) + 1 and receive(m,(tp, p))
+
+Comparing Timestamps
+The timestamp (tp, p) is unique
+Comparing two timestamps(tp, p) and (tq, q)
+	(tp, p) < (tq, q) if and only if
+		tp <tq or
+		tp = tq and p < q
+
+For events a and b on the same process p, tp is strictly increasing, so if a Is before b, then t(a) < t(b)
+For events a and b where a is “send(m)” and b is “receive” t(b) is at least t(a) + 1
+Transitivity of t(a) < t(b) < t(c) implies transitivity
+
+Lamppost clocks guarantee:
+	If a ->r b, then t(a) < t(b)
+	If t(a) >= t(b), then a !->r b
+		These are one way conditions
+	t(a) means local clock of a*
+
+Limitations of Lamport Clocks the happened-before relations a partial order
+Lamport clocks define a total order
+Information about (non-)causality is lost
+We cannot tell by looking at the timestamps of event a and b whether there is a potential causal relation between them, or they are concurrent
+
+Non causality
+Two events are concurrent, (no causal relation), if both conditions hold:
+	a did not happen before b
+	b did not happen before a
+Non causality is when two events are concurrent, so we can assume that they affected each other
+
+Vector Clock
+Vector clocks address some limitations of Lamport clocks 
+The vector clock for an event a is defined as:
+	v(a) = (x1, …, xn), where x1 is the number of events at process pi that happened before a
+
+Process p1, …, pn
+	Each process pi has local vector v of size n (number of processes)
+	v[I].= 0 for all I in [1, n]
+	piggy back v on every sent message
+	for each transition (on each event) update local v at pi
+		v[I] := v[I] + 1 (internal event, send or receive
+		v[j] := max(v[j], vq[j]), for all j != I (receive), where vq is the vector clock received from process q
+
+Comparing vector timestamps
+Vp <= vq if and only if:
+	vp[I] <= vq[I] for all I
+Vp < vq if and only if:
+	vp <= vq and, there exist some I such that vp[I] < vq[I]
+vp||vq if and only if both conditions hold:
+	Not vp <vq
+	Not vq < vp
+
+Partial and Total Order
+Partial order; We have a bunch of elements and some are incomparable, we cannot put them in order
+The happened-before relation ->r defines a partial order (concurrent events are not ordered)
+The relation < on Lamppost clocks defines a total order (any two distinct clock values are ordered)
+The relation < on Vector timestamps defines a partial order (concurrent events are not ordered)
+
+Assignment 2:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
