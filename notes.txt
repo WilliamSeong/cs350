@@ -433,13 +433,201 @@ Assignment 2:
 
 
 
+2/6/24 - Lecture 4 Part 1
+ASSIGNMENT 1 DISCUSSION
+
+Bad Coding Example:
+
+1)
+…
+Batch := 0
+For i :=; i<k;  i++
+	go func() { 		data <- getWeatherData(i, batch) // goroutine will call this function and wait till groroutine returns, upon which it will move that return value to the channel
+	}()
+}
+batch++
+…
+All k goroutines will call getWeatherData() with the same i value, since the loop will have completed, so they will all search for the weather report for the k-1 station.
+Unbuffered channels, it’s a pipe, one side you have producers. In this case you have k producers. You need someone to pull the data form the channel.
+
+A problem is that we don’t pass in an argument into go func(). Additionally, batch keeps incrementing and i keeps incrementing before any goroutine is run
+
+i and batch are undefined values
+DATA RACE - Pass in parameters for the go func() to have data consistency
+
+2)
+var s []int
+datalock := sync.Mutex{}
+…
+for i := 0; i < k; i++ {
+	go func() {
+		datalock.Lock()
+		s = append(s, i)
+		datalock.Unlock()
+	}()
+}
+fmt.Printf(“len = %d%v\n”, len(s), s)
+
+Data Race - don’t know what i is
+
+3)
+datalock :- sync.Mutex{}
+datalock.Lock()
+sum := 0
+count := 0.0
+datalock.Unlock()
+…
+for i := 0; i < k; i++ {
+	go func(id int, b int, lock sync.Mutex) { // own personal mutex 		data:= getWeatherData(id, b)
+		lock.Lock()
+		sum += data.Value
+		count++
+lock.Unlock()
+	}(i, batch, datalock)
+}
+…
+Problem: Each Go routine will use its own mutex, so it’s not actually locking out the other goroutines
+
+4)
+for {
+	select {
+		case <- time.After(time.Second):
+			// Process and report data
+		case <- quit:
+			return
+		default:
+			go getDataAndWriteTo(data, batch)
+		}
+	}
+}
+…
+
+The default case will spawn go routines, every time you get something in the quit channel, 
+
+Problem - We’ll just keep going to the default, in the next loop the time.After gets reset, it’s is essentially and infinite loop and will spawn a large amount of go routines.
+
+5)
+ticker:= …
+for i := 0; i < k; i++ {
+	go func(id int, batch int) {
+		select {
+			case <- ticker.c:
+			default:
+				report := gotWeatherData(id, batch)
+				reports <- report
+		}
+	}()
+}
+
+Problem - Likely never enter the ticker branch, because the default spawns a go routine, so it will just keep going. The ticker is useless
 
 
+Good coding example
 
+1)
+…
+data := make(chan WeatherReport, …) // Create a weather report channel
+…
+func getData(data chan WeatherReport, batch int) {
+	for i := 0; i < k; i++ {
+		go func(id in, b int) {
+			data <- getWeatherData(id, b)
+		}(i, batch)
+	}
+}
+…
 
+Each go routine makes a request to the station
 
+2)
+…
+timer := time.NewTicker(…)
+func tickerBasedControlFlow(…) { 	Process 1st batch
+	for {
+		select {
+			case <- tick: // if the ticker ticks then return the average and move on to the next batch
+				computer report average
+				spawn go routines for next batch
+			case d := <-data // if the ticker hasn’t ticked and we get new data, take note of the data
+				update data
+			case <- quit:
+				return
+		}
+	}
+}
 
+3)
+…
+func timeAfterBasedControlFlow() {
+	process first batch
+	for {
+		select {
+			case <- quit:
+				return
+			case <- time.After(…):
+				Process data
+		}
+	}
+}
+…
 
+We will reach time.After eventually because it’s either time.After or quit, so we will get there eventually
+
+4)
+…
+func sleepBasedControlFlow() { 	process first batch
+	for { 		time.Sleep(…)
+		select { 			case <- quit:
+				return
+			default:
+				Process the next batch
+					* otherwise do some processing
+		}
+	}
+}
+…
+
+5)
+…
+c: = make(chan int, 10000) // Buffered channel that can hold up to 10,000 integers
+
+// Drain buffered channel
+for len(c) > 0 { // while your channel is not empty
+	d := <- c // pull the next integer from the channel
+		your logic
+}
+
+6)
+…
+c: = make(chan int, 10000) // Unbuffered channel
+
+// Drain buffered channel
+done := false
+for !done {
+	select {
+		case d := <- c: // pull if channel is not empty
+			your logic
+		default: // tell that channel is empty
+		done := true
+	}
+}
+
+7)
+for i := 0; i < k; i++ {
+	go func(id int) {
+		datalock.Lock()
+		myBatch := batch // batch is accessed by more than one go routine
+		datalock.Unlock()
+		data := getWeatherData(id, myBatch)
+		datalock.Lock()
+		if myBatch == batch {
+			update data
+		}
+		datalock.Unlock()
+	}(i)
+}
+batch++
+	
 
 
 
